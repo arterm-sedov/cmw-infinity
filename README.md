@@ -2,6 +2,14 @@
 
 Infinity server management tool for CMW projects. Provides easy setup and server management for Infinity embedding and reranking inference servers.
 
+## AI-Enabled Repo
+
+Chat with DeepWiki to get answers about this repo:
+
+[Ask DeepWiki](https://deepwiki.com/arterm-sedov/cmw-infinity)
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/arterm-sedov/cmw-infinity)
+
 ## Features
 
 - **Easy Setup**: One-command installation and verification

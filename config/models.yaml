@@ -16,7 +16,7 @@ embedding_models:
     model_id: Qwen/Qwen3-Embedding-0.6B
     port: 7997
     dtype: float16
-    batch_size: 32
+    batch_size: 16
     memory_gb: 2.0
 
   Qwen/Qwen3-Embedding-4B:

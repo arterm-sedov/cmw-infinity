@@ -23,9 +23,16 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "click>=8.0.0",
-    "pydantic>=2.0.0",
-    "requests>=2.28.0",
+    "click",
+    "pydantic",
+    "requests",
+    "infinity",
+    "infinity-emb[all]",
+    "optimum",
+    "accelerate",
+    "torch",
+    "transformers",
+    "huggingface-hub",
 ]
 
 [project.optional-dependencies]
@@ -39,8 +46,8 @@ dev = [
 cmw-infinity = "cmw_infinity.cli:cli"
 
 [project.urls]
-Homepage = "https://github.com/your-org/cmw-infinity"
-Repository = "https://github.com/your-org/cmw-infinity"
+Homepage = "https://github.com/arterm-sedov/cmw-infinity"
+Repository = "https://github.com/arterm-sedov/cmw-infinity"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cmw_infinity"]

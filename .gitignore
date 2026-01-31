@@ -48,3 +48,4 @@ Thumbs.db
 
 # PID files (runtime)
 *.pid
+.venv-wsl/**

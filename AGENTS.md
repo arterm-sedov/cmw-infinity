@@ -1,6 +1,11 @@
 # Agent Guide for cmw-infinity
 
-This document provides guidance for AI agents working on the cmw-infinity project.
+This document provides guidance for AI agents working on the cmw-infinity project. Rule set for opencode: keep solutions lean; do not overengineer.
+
+## Git & Commits
+
+- **Do NOT create or push commits automatically.** The user reviews all commits first. You may suggest commit messages or stage files only when explicitly asked.
+- If generating a commit message: keep it concise, structured, and strictly relevant to the changes. Do not add, stage, or push.
 
 ## Project Overview
 
@@ -68,6 +73,10 @@ External (user-installed):
 - Linux/macOS: Full signal support
 - PID files stored in ~/.cmw-infinity/
 
+## Development
+
+- Activate the project venv before running Python or tests (e.g. `.venv\Scripts\Activate.ps1` on Windows, `source .venv/bin/activate` on Linux/macOS).
+
 ## Testing
 
 Test scenarios:
@@ -77,9 +86,18 @@ Test scenarios:
 4. Stop non-running server
 5. List running servers
 
+## Agent Behavior
+
+- **Planning:** Plan your course of action before implementing.
+- **Verification:** Run `ruff check <modified_file>` after changes. Run relevant tests. Reanalyze changes for introduced issues.
+- **Linting:** Only lint files that were modified, not the entire codebase. Be critical about Ruff reports; implement only necessary changes.
+- **Secrets:** Never hardcode secrets. Use environment variables.
+- **No breakage:** Never break existing code.
+
 ## Code Style
 
-- Follow Google docstring convention
-- Type hints required
-- Line length: 100
-- Use ruff for linting
+- Follow Google docstring convention. Type hints required. Line length: 100. Use ruff for linting.
+- **Naming:** `snake_case` for variables/functions, `PascalCase` for classes, `UPPER_CASE` for constants.
+- **Imports:** At top of file; ruff handles sorting.
+- **Comments:** Explain why, not what. Do not delete existing comments or logging; update if needed.
+- **Error handling:** Avoid unnecessary try/except. Catch only when necessary and meaningful. Prefer robust, explicit logic over hardcoded fallbacks.

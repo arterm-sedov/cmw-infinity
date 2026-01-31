@@ -57,6 +57,8 @@ cmw-infinity start dity-reranker
 cmw-infinity start qwen3-embedding-8b
 ```
 
+**Note:** First start can take several minutes (model download from Hugging Face; CPU loading is slower than GPU). If `infinity_emb` is not in PATH (e.g. in WSL), use `cmw-infinity start <model>`; the tool falls back to `python -m infinity_emb`.
+
 ### 3. Check Status
 
 ```bash

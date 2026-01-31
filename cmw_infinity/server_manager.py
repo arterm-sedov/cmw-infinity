@@ -22,10 +22,15 @@ logger = logging.getLogger(__name__)
 PID_DIR = Path.home() / ".cmw-infinity"
 
 
+def _pid_file_key(model_key: str) -> str:
+    """Filesystem-safe key for PID file (slashes not allowed on Windows)."""
+    return model_key.replace("/", "-")
+
+
 def _get_pid_file(model_key: str) -> Path:
     """Get path to PID file for a model."""
     PID_DIR.mkdir(parents=True, exist_ok=True)
-    return PID_DIR / f"{model_key}.pid"
+    return PID_DIR / f"{_pid_file_key(model_key)}.pid"
 
 
 def _save_pid(model_key: str, pid: int, config: InfinityModelConfig) -> None:
@@ -105,8 +110,25 @@ class InfinityServerManager:
             logger.info(f"Server for {model_key} already running on port {config.port}")
             return True
 
-        # Build command
-        cmd = ["infinity_emb"] + config.to_infinity_args()
+        # Build command - use full path if in virtual environment; fallback to python -m
+        import sys
+
+        if hasattr(sys, "real_prefix") or (
+            hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix
+        ):
+            venv_path = Path(sys.prefix)
+            if sys.platform == "win32":
+                infinity_path = venv_path / "Scripts" / "infinity_emb.exe"
+                if not infinity_path.exists():
+                    infinity_path = venv_path / "Scripts" / "infinity_emb"
+            else:
+                infinity_path = venv_path / "bin" / "infinity_emb"
+            if infinity_path.exists():
+                cmd = [str(infinity_path)] + config.to_infinity_args()
+            else:
+                cmd = [sys.executable, "-m", "infinity_emb"] + config.to_infinity_args()
+        else:
+            cmd = [sys.executable, "-m", "infinity_emb"] + config.to_infinity_args()
         logger.info(f"Starting Infinity server: {' '.join(cmd)}")
 
         try:
@@ -244,13 +266,13 @@ class InfinityServerManager:
 
     def list_running(self) -> list[ServerStatus]:
         """List all running servers."""
-        from .server_config import EMBEDDING_MODELS, RERANKER_MODELS
+        from .server_config import ModelRegistry
 
+        registry = ModelRegistry()
         statuses = []
-        all_models = {**EMBEDDING_MODELS, **RERANKER_MODELS}
-
-        for model_key, config in all_models.items():
-            status = self.get_status(model_key, config)
+        for slug in registry.list_embeddings() + registry.list_rerankers():
+            config = registry.get_config(slug)
+            status = self.get_status(slug, config)
             if status.pid:  # Has PID file
                 statuses.append(status)
 

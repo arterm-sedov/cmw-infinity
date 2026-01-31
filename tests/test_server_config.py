@@ -5,27 +5,30 @@ from __future__ import annotations
 import pytest
 
 from cmw_infinity.server_config import (
-    EMBEDDING_MODELS,
-    RERANKER_MODELS,
+    ModelRegistry,
     get_model_config,
     list_available_models,
 )
 
 
 def test_get_model_config_frida():
-    """Test getting FRIDA config."""
-    config = get_model_config("frida")
+    """Test getting FRIDA config (case-insensitive slug)."""
+    config = get_model_config("ai-forever/FRIDA")
     assert config.model_id == "ai-forever/FRIDA"
     assert config.model_type == "embedding"
     assert config.port == 7997
+    config_lower = get_model_config("ai-forever/frida")
+    assert config_lower.model_id == "ai-forever/FRIDA"
 
 
 def test_get_model_config_dity():
-    """Test getting DiTy reranker config."""
-    config = get_model_config("dity-reranker")
+    """Test getting DiTy reranker config (case-insensitive slug)."""
+    config = get_model_config("DiTy/cross-encoder-russian-msmarco")
     assert config.model_id == "DiTy/cross-encoder-russian-msmarco"
     assert config.model_type == "reranker"
     assert config.port == 7998
+    config_lower = get_model_config("dity/cross-encoder-russian-msmarco")
+    assert config_lower.model_id == "DiTy/cross-encoder-russian-msmarco"
 
 
 def test_get_model_config_unknown():
@@ -39,13 +42,13 @@ def test_list_available_models():
     models = list_available_models()
     assert "embedding" in models
     assert "reranker" in models
-    assert "frida" in models["embedding"]
-    assert "dity-reranker" in models["reranker"]
+    assert "ai-forever/FRIDA" in models["embedding"]
+    assert "DiTy/cross-encoder-russian-msmarco" in models["reranker"]
 
 
 def test_to_infinity_args():
     """Test converting config to CLI args."""
-    config = get_model_config("frida")
+    config = get_model_config("ai-forever/FRIDA")
     args = config.to_infinity_args()
 
     assert "v2" in args
@@ -81,7 +84,9 @@ def test_port_validation():
 
 def test_all_embedding_models():
     """Test all embedding models have required fields."""
-    for key, config in EMBEDDING_MODELS.items():
+    registry = ModelRegistry()
+    for slug in registry.list_embeddings():
+        config = registry.get_embedding_config(slug)
         assert config.model_id
         assert config.model_type == "embedding"
         assert config.port > 0
@@ -90,7 +95,9 @@ def test_all_embedding_models():
 
 def test_all_reranker_models():
     """Test all reranker models have required fields."""
-    for key, config in RERANKER_MODELS.items():
+    registry = ModelRegistry()
+    for slug in registry.list_rerankers():
+        config = registry.get_reranker_config(slug)
         assert config.model_id
         assert config.model_type == "reranker"
         assert config.port > 0

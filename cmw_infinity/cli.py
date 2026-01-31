@@ -7,8 +7,7 @@ import sys
 import click
 
 from .server_config import (
-    EMBEDDING_MODELS,
-    RERANKER_MODELS,
+    ModelRegistry,
     get_model_config,
     list_available_models,
 )
@@ -77,7 +76,13 @@ def setup() -> None:
 @cli.command()
 @click.argument("model_key")
 @click.option("--foreground", "-f", is_flag=True, help="Run in foreground (don't detach)")
-def start(model_key: str, foreground: bool) -> None:
+@click.option(
+    "--device",
+    type=click.Choice(["auto", "cpu", "cuda", "mps"]),
+    default=None,
+    help="Device to use (overrides config; use cpu to work around some infinity_emb issues)",
+)
+def start(model_key: str, foreground: bool, device: str | None) -> None:
     """Start an Infinity server for a model."""
     try:
         config = get_model_config(model_key)
@@ -88,6 +93,9 @@ def start(model_key: str, foreground: bool) -> None:
         click.echo(f"  Embedding: {', '.join(available['embedding'])}")
         click.echo(f"  Reranker: {', '.join(available['reranker'])}")
         sys.exit(1)
+
+    if device is not None:
+        config = config.model_copy(update={"device": device})
 
     manager = InfinityServerManager()
     status = manager.get_status(model_key, config)
@@ -167,8 +175,10 @@ def status() -> None:
         click.echo("No servers are running")
         return
 
-    click.echo(f"{'Model':<20} {'Type':<10} {'Port':<8} {'Status':<12} {'Uptime'}")
-    click.echo("-" * 65)
+    click.echo(f"{'Model':<30} {'Type':<10} {'Port':<8} {'Status':<12} {'Uptime'}")
+    click.echo("-" * 75)
+
+    registry = ModelRegistry()
 
     for s in running:
         status_str = "✓ running" if s.is_running else "✗ not responding"
@@ -181,27 +191,32 @@ def status() -> None:
             else:
                 uptime_str = f"{minutes}m"
 
-        model_type = "embedding" if s.model_key in EMBEDDING_MODELS else "reranker"
-        click.echo(f"{s.model_key:<20} {model_type:<10} {s.port:<8} {status_str:<12} {uptime_str}")
+        try:
+            model_type = registry.get_model_type(s.model_key)
+        except ValueError:
+            model_type = "unknown"
+
+        click.echo(f"{s.model_key:<30} {model_type:<10} {s.port:<8} {status_str:<12} {uptime_str}")
 
 
 @cli.command(name="list")
 def list_models() -> None:
-    """List all available models."""
-    available = list_available_models()
+    """List all available models (case-insensitive)."""
+    registry = ModelRegistry()
 
     click.echo("Embedding Models:")
-    for key in available["embedding"]:
-        config = EMBEDDING_MODELS[key]
-        click.echo(f"  {key:<25} {config.model_id:<40} {config.memory_gb} GB")
+    for slug in registry.list_embeddings():
+        config = registry.get_embedding_config(slug)
+        click.echo(f"  {slug:<35} {config.model_id:<40} {config.memory_gb} GB")
 
     click.echo("\nReranker Models:")
-    for key in available["reranker"]:
-        config = RERANKER_MODELS[key]
-        click.echo(f"  {key:<25} {config.model_id:<40} {config.memory_gb} GB")
+    for slug in registry.list_rerankers():
+        config = registry.get_reranker_config(slug)
+        click.echo(f"  {slug:<35} {config.model_id:<40} {config.memory_gb} GB")
 
     click.echo("\nUsage:")
-    click.echo("  cmw-infinity start <model-key>")
+    click.echo('  cmw-infinity start "Qwen/Qwen3-Embedding-8B"')
+    click.echo("  cmw-infinity start qwen/qwen3-embedding-8b  # Case insensitive")
 
 
 if __name__ == "__main__":

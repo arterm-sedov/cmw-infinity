@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from .server_config import (
-    EMBEDDING_MODELS,
     InfinityModelConfig,
-    RERANKER_MODELS,
+    ModelRegistry,
     ServerStatus,
     get_model_config,
     list_available_models,
@@ -19,6 +18,5 @@ __all__ = [
     "InfinityServerManager",
     "get_model_config",
     "list_available_models",
-    "EMBEDDING_MODELS",
-    "RERANKER_MODELS",
+    "ModelRegistry",
 ]

@@ -110,26 +110,44 @@ class InfinityServerManager:
             logger.info(f"Server for {model_key} already running on port {config.port}")
             return True
 
-        # Build command - use full path if in virtual environment; fallback to python -m
+        # Use Python API directly due to broken CLI
         import sys
+        
+        # Create a Python script to start the server
+        server_script = f'''
+import infinity_emb
+from infinity_emb.args import EngineArgs
+from infinity_emb import create_server
+import uvicorn
 
-        if hasattr(sys, "real_prefix") or (
-            hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix
-        ):
-            venv_path = Path(sys.prefix)
-            if sys.platform == "win32":
-                infinity_path = venv_path / "Scripts" / "infinity_emb.exe"
-                if not infinity_path.exists():
-                    infinity_path = venv_path / "Scripts" / "infinity_emb"
-            else:
-                infinity_path = venv_path / "bin" / "infinity_emb"
-            if infinity_path.exists():
-                cmd = [str(infinity_path)] + config.to_infinity_args()
-            else:
-                cmd = [sys.executable, "-m", "infinity_emb"] + config.to_infinity_args()
-        else:
-            cmd = [sys.executable, "-m", "infinity_emb"] + config.to_infinity_args()
-        logger.info(f"Starting Infinity server: {' '.join(cmd)}")
+# Create engine args from config with advanced options
+engine_args = EngineArgs(
+    model_name_or_path="{config.model_id}",
+    batch_size={config.batch_size},
+    device="{config.device}",
+    dtype="{config.dtype}",
+    model_warmup=False,  # Skip warmup for faster startup
+    bettertransformer=True,  # Enable optimizations
+    compile=False,  # Skip compilation for faster startup
+)
+
+# Create FastAPI server
+app = create_server(engine_args_list=[engine_args])
+
+# Start server with optimized settings
+uvicorn.run(
+    app, 
+    host="127.0.0.1", 
+    port={config.port}, 
+    log_level="error",
+    # Optimize for performance
+    access_log=False,
+    use_colors=False
+)
+'''
+        
+        cmd = [sys.executable, "-c", server_script]
+        logger.info(f"Starting Infinity server for {config.model_id} on port {config.port}")
 
         try:
             if background:

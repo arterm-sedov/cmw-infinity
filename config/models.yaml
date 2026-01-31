@@ -50,24 +50,27 @@ reranker_models:
     batch_size: 32
     memory_gb: 2.0
 
-  # Qwen3 Rerankers
-  Qwen/Qwen3-Reranker-0.6B:
-    model_id: Qwen/Qwen3-Reranker-0.6B
-    port: 7998
-    dtype: float16
-    batch_size: 32
-    memory_gb: 2.0
+  # Qwen3 Rerankers (model type issues - use BGE or DiTy instead)
+  # Note: Qwen3-Reranker models exist but Infinity loads them as generative models
+  # Use BGE-Reranker-v2-m3 or DiTy/cross-encoder for working rerankers
+  # Keeping entries for reference but commenting out
+  # Qwen/Qwen3-Reranker-0.6B:
+  #   model_id: Qwen/Qwen3-Reranker-0.6B
+  #   port: 7998
+  #   dtype: float16
+  #   batch_size: 32
+  #   memory_gb: 2.0
 
-  Qwen/Qwen3-Reranker-4B:
-    model_id: Qwen/Qwen3-Reranker-4B
-    port: 7998
-    dtype: float16
-    batch_size: 16
-    memory_gb: 12.0
+  # Qwen/Qwen3-Reranker-4B:
+  #   model_id: Qwen/Qwen3-Reranker-4B
+  #   port: 7998
+  #   dtype: float16
+  #   batch_size: 16
+  #   memory_gb: 12.0
 
-  Qwen/Qwen3-Reranker-8B:
-    model_id: Qwen/Qwen3-Reranker-8B
-    port: 7998
-    dtype: float16
-    batch_size: 8
-    memory_gb: 22.0
+  # Qwen/Qwen3-Reranker-8B:
+  #   model_id: Qwen/Qwen3-Reranker-8B
+  #   port: 7998
+  #   dtype: float16
+  #   batch_size: 8
+  #   memory_gb: 22.0

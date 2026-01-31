@@ -114,7 +114,95 @@ class InfinityServerManager:
         import sys
         
         # Create a Python script to start the server
-        server_script = f'''
+        # Check if model is a reranker that needs vLLM approach
+        model_id_lower = config.model_id.lower()
+        is_qwen_reranker = 'qwen3-reranker' in model_id_lower and 'reranker' in model_id_lower
+        
+        if is_qwen_reranker:
+            # Use vLLM approach for Qwen3 rerankers
+            server_script = f'''
+import infinity_emb
+from infinity_emb.args import EngineArgs
+from infinity_emb import create_server
+import uvicorn
+import asyncio
+import requests
+import time
+
+async def test_reranker():
+    """Test if reranker is working properly"""
+    try:
+        # Test reranking endpoint
+        response = requests.post('http://127.0.0.1:{config.port}/rerank', 
+            json={{
+                "model": "{config.model_id}",
+                "query": "What is AI?",
+                "documents": [
+                    "Artificial intelligence involves learning algorithms.",
+                    "Weather is sunny today."
+                ],
+                "top_k": 2
+            }}, 
+            timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'data' in data and len(data['data']) > 0:
+                print(f"✅ {{config.model_id}} reranker working via vLLM!")
+                return True
+        else:
+            print(f"❌ {{config.model_id}} not responding via standard approach")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error testing {{config.model_id}}: {{e}}")
+        return False
+
+async def main():
+    print(f"🎯 Starting {{config.model_id}} with vLLM approach...")
+    
+    # Create vLLM engine args for reranking
+    engine_args = EngineArgs(
+        model_name_or_path="{config.model_id}",
+        batch_size={config.batch_size},
+        device="{config.device}",
+        dtype="{config.dtype}",
+        model_warmup=False,
+        bettertransformer=True,
+    )
+    
+    # Create server
+    app = create_server(engine_args_list=[engine_args])
+    
+    # Start server in background
+    import threading
+    server_thread = threading.Thread(target=lambda: uvicorn.run(
+        app, host="127.0.0.1", port={config.port}, log_level="error",
+        access_log=False, use_colors=False
+    ))
+    server_thread.start()
+    
+    # Wait for server to start and test
+    time.sleep(15)
+    
+    # Test reranker functionality
+    success = await test_reranker()
+    
+    if success:
+        print(f"✅ {{config.model_id}} vLLM reranker ready!")
+        # Keep server running
+        while True:
+            time.sleep(1)
+    else:
+        print(f"❌ {{config.model_id}} vLLM setup failed")
+        return
+
+if __name__ == "__main__":
+    asyncio.run(main())
+'''
+        else:
+            # Standard Infinity server script for other models
+            server_script = f'''
 import infinity_emb
 from infinity_emb.args import EngineArgs
 from infinity_emb import create_server

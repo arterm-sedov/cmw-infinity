@@ -32,30 +32,29 @@ cmw-mosec-reranker/
 # cmw_mosec_reranker/worker.py
 import os
 from typing import List
+import torch
 from mosec import Server, Worker, Runtime
 from mosec.mixin import MsgpackMixin
-from optimum.intel import OVModelForSequenceClassification  # OpenVINO for Intel
+from optimum.intel import OVModelForSequenceClassification
 from transformers import AutoTokenizer
 
-# Intel CPU optimizations
 os.environ["OMP_NUM_THREADS"] = "1" 
 os.environ["MKL_NUM_THREADS"] = "1"
 
 class DiTyRerankerWorker(MsgpackMixin, Worker):
     def __init__(self, model_path: str):
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        # Use OpenVINO for optimal Intel performance
         self.model = OVModelForSequenceClassification.from_pretrained(
-            model_path, 
-            export=True,  # Compiles ONNX to OpenVINO IR
-            device="CPU"
+            model_path, export=True, device="CPU"
         )
 
     def forward(self, data: List[dict]) -> List[float]:
         # MOSEC aggregates requests into 'data'
         # Expecting: [{"query": "...", "passage": "..."}, ...]
-        pairs = [(item["query"], item["passage"]) for item in data]
+        if not data:
+            raise ValueError("Empty request data")
         
+        pairs = [(item["query"], item["passage"]) for item in data]
         inputs = self.tokenizer(
             pairs, 
             padding=True, 
@@ -64,7 +63,9 @@ class DiTyRerankerWorker(MsgpackMixin, Worker):
             return_tensors="pt"
         )
         
-        outputs = self.model(**inputs)
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        
         # Apply sigmoid to normalize scores to [0, 1]
         probabilities = torch.sigmoid(outputs.logits).flatten().tolist()
         
@@ -87,13 +88,16 @@ def create_server(config: ServerConfig) -> Server:
         max_wait_time=config.max_wait_time,
         # Performance monitoring
         enable_metrics=True,
+        health_check_endpoint="/health",
+        metrics_endpoint="/metrics",
     )
     
     # Append workers with Intel-optimized threading
     server.append_worker(
         DiTyRerankerWorker, 
         num=config.workers,
-        max_batch_size=config.max_batch_size
+        max_batch_size=config.max_batch_size,
+        timeout=config.timeout,
     )
     
     return server
@@ -205,39 +209,61 @@ curl -X POST http://localhost:8000/inference \
 
 #### 2.2 Integration Testing with RAG System
 ```python
-# Test script: tests/test_integration.py
+# tests/test_integration.py
 import requests
-import json
+import time
+import concurrent.futures
 
 def test_reranker_endpoint():
-    """Test reranker integration with existing RAG system."""
-    
-    # Test basic functionality
     response = requests.post("http://localhost:8080/rerank", 
         json={
             "query": "машинное обучение",
-            "documents": [
-                "Машинное обучение и искусственный интеллект",
-                "Приготовление кофе и рецепты выпечки",
-                "Нейронные сети и глубокое обучение"
-            ],
+            "documents": ["Doc 1", "Doc 2", "Doc 3"],
             "top_k": 2
         },
-        timeout=30
+        timeout=10
     )
-    
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+    assert response.status_code == 200
     
     data = response.json()
-    assert "scores" in data, "Missing scores in response"
-    assert len(data["scores"]) == 3, "Expected 3 scores"
+    assert "scores" in data and len(data["scores"]) == 3
+    assert all(0 <= s <= 1 for s in data["scores"])
+
+def test_load_resistance():
+    def single_request():
+        try:
+            resp = requests.post("http://localhost:8080/rerank",
+                json={"query": "test", "documents": ["doc"], "top_k": 1},
+                timeout=5
+            )
+            return resp.status_code == 200
+        except:
+            return False
     
-    # Validate score normalization
-    scores = data["scores"]
-    assert all(0 <= s <= 1 for s in scores), f"Scores not normalized: {scores}"
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(single_request) for _ in range(5)]
+        results = [f.result() for f in concurrent.futures.as_completed(futures, timeout=30)]
     
-    print(f"✓ Integration test passed. Scores: {scores}")
-    return True
+    success_rate = sum(results) / len(results)
+    assert success_rate >= 0.8
+
+def test_timeout_resistance():
+    """Test that MOSEC server doesn't hang like infinity_emb."""
+    start = time.time()
+    
+    try:
+        response = requests.post("http://localhost:8080/rerank",
+            json={"query": "test", "documents": ["test document"], "top_k": 1},
+            timeout=5  # Should return well before this
+        )
+        elapsed = time.time() - start
+        
+        assert response.status_code == 200
+        assert elapsed < 3.0, f"Request took too long: {elapsed:.2f}s"
+        
+    except requests.exceptions.Timeout:
+        elapsed = time.time() - start
+        raise AssertionError(f"Request hung like infinity_emb: {elapsed:.2f}s")
 ```
 
 ### Phase 3: Production Deployment (Priority: Medium)
@@ -393,13 +419,17 @@ CMW_MOSEC_MAX_WAIT_TIME=50
 ## Performance Benchmarks & Monitoring
 
 ### Expected Performance (Intel Xeon, 4 cores)
-| Metric | MOSEC | FastAPI | infinity_emb (broken) |
-|---------|--------|----------|---------------------|
+| Metric | MOSEC | FastAPI | infinity_emb |
+|---------|--------|----------|-------------|
 | **Throughput** | **15 req/s** | 4 req/s | 0 req/s |
 | **Latency (p95)** | **85ms** | 120ms | ∞ |
 | **Memory Usage** | **800MB** | 1.2GB | N/A |
-| **CPU Utilization** | **75%** | 95% | 100% |
-| **Development Time** | 4-6 hours | 1-2 hours | ∞ |
+
+### infinity_emb Critical Issues
+- Request timeouts (>60s) despite healthy endpoints
+- Subprocess path conflicts causing process exits  
+- Manual intervention required for stability
+- Health endpoints work, rerank endpoints hang indefinitely
 
 ### Monitoring Endpoints
 ```bash
@@ -407,7 +437,7 @@ CMW_MOSEC_MAX_WAIT_TIME=50
 curl http://localhost:8081/health
 # Response: {"status": "healthy", "model": "DiTy/cross-encoder-russian-msmarco"}
 
-# Prometheus metrics
+# Prometheus metrics  
 curl http://localhost:8080/metrics
 # Response: reranker_requests_total, reranker_request_duration_seconds, etc.
 
@@ -421,14 +451,14 @@ hey -c 10 -z 30s -m POST -H "Content-Type: application/json" \
 
 ### Pre-deployment Testing
 - [ ] Model conversion to ONNX successful
-- [ ] ONNX model loads with OpenVINO
+- [ ] ONNX model loads with OpenVINO  
 - [ ] Basic rerank functionality works
 - [ ] Score normalization (sigmoid) working
 - [ ] Health endpoints responding
 - [ ] Memory usage within limits
 - [ ] Error handling for invalid requests
 
-### Load Testing
+### Load Testing  
 - [ ] Concurrent request handling (10+ req/s)
 - [ ] Graceful degradation under load
 - [ ] Memory stability over time
@@ -458,43 +488,30 @@ hey -c 10 -z 30s -m POST -H "Content-Type: application/json" \
 
 ## Troubleshooting Guide
 
-### Common Issues
-1. **OpenVINO Import Errors**
-   ```bash
-   # Ensure optimum[openvino] is installed
-   pip install "optimum[openvino]"
-   
-   # Verify OpenVINO availability
-   python -c "from optimum.intel import OVModel; print('OpenVINO available')"
-   ```
+### infinity_emb Issues (Avoid These)
+- Use full venv paths for subprocess calls
+- Test imports before starting: `venv/bin/python -c "import infinity_emb"`
+- Monitor for hanging requests with increasing timeouts
+- Clean stale PID files manually
+- Verify server actually listening on port
 
-2. **Threading Performance Issues**
-   ```bash
-   # For 4-core CPU, use 1 thread per process
-   export OMP_NUM_THREADS=1
-   export MKL_NUM_THREADS=1
-   
-   # Monitor CPU usage
-   htop -p $(pgrep -f cmw-mosec-reranker)
-   ```
+### Common MOSEC Issues
+```bash
+# OpenVINO availability
+pip install "optimum[openvino]"
+python -c "from optimum.intel import OVModel; print('OpenVINO available')"
 
-3. **Memory Overruns**
-   ```bash
-   # Reduce batch size if memory constrained
-   export CMW_MOSEC_MAX_BATCH_SIZE=4
-   
-   # Monitor memory usage
-   ps -o pid,vsz,rss,comm -p $(pgrep -f cmw-mosec-reranker)
-   ```
+# Threading (4-core CPU, 1 thread per process)
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
 
-4. **Performance Degradation**
-   ```bash
-   # Check if OpenVINO is being used
-   curl http://localhost:8081/health | grep -i openvino
-   
-   # Verify ONNX model conversion
-   ls -la models/dity_onnx_model/
-   ```
+# Memory limits
+export CMW_MOSEC_MAX_BATCH_SIZE=4
+
+# Process monitoring
+htop -p $(pgrep -f cmw-mosec-reranker)
+ps -o pid,vsz,rss,comm -p $(pgrep -f cmw-mosec-reranker)
+```
 
 ## Implementation Timeline
 
@@ -522,17 +539,43 @@ hey -c 10 -z 30s -m POST -H "Content-Type: application/json" \
 
 ## Risk Mitigation
 
+### Key Risks from infinity_emb Experience
+- Process management failures from subprocess isolation
+- Request timeouts despite healthy endpoints
+- Environment dependency conflicts
+- Silent failures (healthy endpoints, hanging requests)
+
 ### Technical Risks
-- **OpenVINO Compatibility**: Test on target hardware early
-- **Performance Regression**: Benchmark against baseline
-- **Memory Constraints**: Implement configurable batch sizes
-- **Docker Issues**: Multi-stage builds, size optimization
+- OpenVINO hardware compatibility
+- Performance vs baseline (infinity_emb non-working)
+- Memory constraints
+- Docker build optimization
 
 ### Operational Risks
-- **Service Downtime**: Parallel deployment strategy
-- **Team Training**: Documentation, runbooks
-- **Integration Complexity**: Incremental migration approach
-- **Performance Bottlenecks**: Monitoring and alerting
+- Service downtime
+- Integration complexity
+- Performance bottlenecks
+
+### Failure Modes to Avoid
+- Silent endpoint failures
+- Subprocess path conflicts
+- Missing graceful degradation
+- PID file corruption
+
+## Why MOSEC vs infinity_emb
+
+### infinity_emb Issues
+- Subprocess path conflicts
+- Stale PID files preventing restarts  
+- Request hanging despite healthy endpoints
+- No automatic recovery from process failures
+
+### MOSEC Advantages
+- Rust-based high-performance controller (more reliable than Python subprocess)
+- Built-in batching for concurrent request handling
+- Worker isolation prevents cascade failures
+- Built-in health checks and metrics
+- Proper signal handling and graceful shutdown
 
 ---
 

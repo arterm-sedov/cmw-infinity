@@ -175,8 +175,8 @@ def status() -> None:
         click.echo("No servers are running")
         return
 
-    click.echo(f"{'Model':<30} {'Type':<10} {'Port':<8} {'Status':<12} {'Uptime'}")
-    click.echo("-" * 75)
+    click.echo(f"{'Model':<30} {'Type':<10} {'Device':<8} {'Port':<8} {'Status':<12} {'Uptime'}")
+    click.echo("-" * 85)
 
     registry = ModelRegistry()
 
@@ -196,7 +196,7 @@ def status() -> None:
         except ValueError:
             model_type = "unknown"
 
-        click.echo(f"{s.model_key:<30} {model_type:<10} {s.port:<8} {status_str:<12} {uptime_str}")
+        click.echo(f"{s.model_key:<30} {model_type:<10} {s.device:<8} {s.port:<8} {status_str:<12} {uptime_str}")
 
 
 @cli.command(name="list")

@@ -58,6 +58,7 @@ class ServerStatus(BaseModel):
     model_key: str = Field(description="Model identifier")
     model_id: str = Field(description="HuggingFace model ID")
     port: int = Field(description="Server port")
+    device: str = Field(description="Device (auto/cpu/cuda)")
     pid: int | None = Field(None, description="Process ID")
     is_running: bool = Field(False, description="Whether server is responding")
     uptime_seconds: float | None = Field(None, description="Server uptime")

@@ -33,7 +33,27 @@ def _get_pid_file(model_key: str) -> Path:
     return PID_DIR / f"{_pid_file_key(model_key)}.pid"
 
 
-def _save_pid(model_key: str, pid: int, config: InfinityModelConfig) -> None:
+def _get_actual_device(pid: int) -> str:
+    """Detect actual device (cuda/cpu) by checking GPU usage."""
+    try:
+        # Check if process has GPU memory allocated via nvidia-smi
+        result = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            gpu_pids = [int(line.strip()) for line in result.stdout.strip().split("\n") if line.strip()]
+            if pid in gpu_pids:
+                return "cuda"
+        return "cpu"
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        # nvidia-smi not available or error, assume CPU
+        return "cpu"
+
+
+def _save_pid(model_key: str, pid: int, config: InfinityModelConfig, actual_device: str | None = None) -> None:
     """Save process info to PID file."""
     pid_file = _get_pid_file(model_key)
     data = {
@@ -41,6 +61,8 @@ def _save_pid(model_key: str, pid: int, config: InfinityModelConfig) -> None:
         "model_key": model_key,
         "model_id": config.model_id,
         "port": config.port,
+        "device": config.device,
+        "actual_device": actual_device,
         "started_at": time.time(),
     }
     pid_file.write_text(json.dumps(data))
@@ -250,7 +272,7 @@ uvicorn.run(
                 # Start in foreground
                 process = subprocess.Popen(cmd)
 
-            # Save PID
+            # Save PID (without actual device yet)
             _save_pid(model_key, process.pid, config)
 
             # Wait for server to be ready
@@ -259,6 +281,10 @@ uvicorn.run(
                 for i in range(30):  # Wait up to 30 seconds
                     if _check_server_health(config.port):
                         logger.info(f"Server {model_key} is ready!")
+                        # Detect actual device and update PID file
+                        actual_device = _get_actual_device(process.pid)
+                        _save_pid(model_key, process.pid, config, actual_device)
+                        logger.info(f"Server {model_key} running on device: {actual_device}")
                         return True
                     time.sleep(1)
                     if process.poll() is not None:
@@ -361,10 +387,16 @@ uvicorn.run(
                 if pid_info and "started_at" in pid_info:
                     uptime = time.time() - pid_info["started_at"]
 
+        # Use actual device from PID file if available, otherwise use config device
+        device = config.device
+        if pid_info and "actual_device" in pid_info and pid_info["actual_device"]:
+            device = pid_info["actual_device"]
+
         return ServerStatus(
             model_key=model_key,
             model_id=config.model_id,
             port=config.port,
+            device=device,
             pid=pid,
             is_running=is_running,
             uptime_seconds=uptime,

@@ -3,13 +3,14 @@
 # Each model has unique port for simultaneous running
 
 embedding_models:
-  # FRIDA
+  # FRIDA (T5-based, requires CLS pooling)
   ai-forever/FRIDA:
     model_id: ai-forever/FRIDA
     port: 7997
     dtype: float16
     batch_size: 16  # Reduced for better performance
     memory_gb: 4.0
+    pooling_method: cls  # FRIDA requires CLS pooling per HuggingFace docs
 
   # Qwen3 Embeddings (different sizes)
   Qwen/Qwen3-Embedding-0.6B:

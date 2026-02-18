@@ -44,7 +44,9 @@ def _get_actual_device(pid: int) -> str:
             timeout=5,
         )
         if result.returncode == 0:
-            gpu_pids = [int(line.strip()) for line in result.stdout.strip().split("\n") if line.strip()]
+            gpu_pids = [
+                int(line.strip()) for line in result.stdout.strip().split("\n") if line.strip()
+            ]
             if pid in gpu_pids:
                 return "cuda"
         return "cpu"
@@ -53,7 +55,9 @@ def _get_actual_device(pid: int) -> str:
         return "cpu"
 
 
-def _save_pid(model_key: str, pid: int, config: InfinityModelConfig, actual_device: str | None = None) -> None:
+def _save_pid(
+    model_key: str, pid: int, config: InfinityModelConfig, actual_device: str | None = None
+) -> None:
     """Save process info to PID file."""
     pid_file = _get_pid_file(model_key)
     data = {
@@ -134,12 +138,12 @@ class InfinityServerManager:
 
         # Use Python API directly due to broken CLI
         import sys
-        
+
         # Create a Python script to start the server
         # Check if model is a reranker that needs vLLM approach
         model_id_lower = config.model_id.lower()
-        is_qwen_reranker = 'qwen3-reranker' in model_id_lower and 'reranker' in model_id_lower
-        
+        is_qwen_reranker = "qwen3-reranker" in model_id_lower and "reranker" in model_id_lower
+
         if is_qwen_reranker:
             # Use vLLM approach for Qwen3 rerankers
             server_script = f'''
@@ -224,6 +228,11 @@ if __name__ == "__main__":
 '''
         else:
             # Standard Infinity server script for other models
+            pooling_arg = (
+                f', pooling_method="{config.pooling_method}"'
+                if config.pooling_method != "auto"
+                else ""
+            )
             server_script = f'''
 import infinity_emb
 from infinity_emb.args import EngineArgs
@@ -238,7 +247,7 @@ engine_args = EngineArgs(
     dtype="{config.dtype}",
     model_warmup=False,  # Skip warmup for faster startup
     bettertransformer=True,  # Enable optimizations
-    compile=False,  # Skip compilation for faster startup
+    compile=False,  # Skip compilation for faster startup{pooling_arg}
 )
 
 # Create FastAPI server
@@ -255,7 +264,7 @@ uvicorn.run(
     use_colors=False
 )
 '''
-        
+
         cmd = [sys.executable, "-c", server_script]
         logger.info(f"Starting Infinity server for {config.model_id} on port {config.port}")
 

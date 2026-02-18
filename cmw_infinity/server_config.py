@@ -27,6 +27,9 @@ class InfinityModelConfig(BaseModel):
     dtype: Literal["float16", "float32", "int8"] = Field(default="float16")
     batch_size: int = Field(default=32, description="Dynamic batching size")
     memory_gb: float = Field(description="Estimated VRAM usage in GB")
+    pooling_method: Literal["auto", "cls", "mean"] = Field(
+        default="auto", description="Pooling method for embeddings (cls for FRIDA)"
+    )
 
     @field_validator("port")
     def validate_port_range(cls, v: int) -> int:
@@ -49,6 +52,8 @@ class InfinityModelConfig(BaseModel):
         ]
         if self.device != "auto":
             args.extend(["--device", self.device])
+        if self.pooling_method != "auto":
+            args.extend(["--pooling-method", self.pooling_method])
         return args
 
 
@@ -118,9 +123,7 @@ class ModelRegistry:
 
     def _to_config(self, data: dict[str, Any]) -> InfinityModelConfig:
         """Build InfinityModelConfig from registry dict (exclude canonical_slug)."""
-        return InfinityModelConfig(
-            **{k: v for k, v in data.items() if k != "canonical_slug"}
-        )
+        return InfinityModelConfig(**{k: v for k, v in data.items() if k != "canonical_slug"})
 
     def get_embedding_config(self, model_slug: str) -> InfinityModelConfig:
         """Get configuration for an embedding model (case-insensitive).
